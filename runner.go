@@ -3,13 +3,21 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/sethgrid/curse"
+	"github.com/sethgrid/multibar"
 	"github.com/smallfish/simpleyaml"
 )
 
 type Argument struct {
-	key, value interface{}
+	key            string
+	value          interface{}
+	current, total int
 }
 
 // Produce the argument string for a flag with a given key and value
@@ -74,13 +82,13 @@ func main() {
 				if cmd_val_arr, ok := cmd_map[key].([]interface{}); ok {
 					// This is an array which we need to add to our run matrix
 					var arg_arr []Argument
-					for _, val := range cmd_val_arr {
-						arg_arr = append(arg_arr, Argument{key, val})
+					for i, val := range cmd_val_arr {
+						arg_arr = append(arg_arr, Argument{key.(string), val, i + 1, len(cmd_val_arr)})
 					}
 					matrix = append(matrix, arg_arr)
 				} else {
 					// This is a simple flag which we use for each iteration
-					flags = append(flags, Argument{key.(string), cmd_map[key]})
+					flags = append(flags, Argument{key.(string), cmd_map[key], 1, 1})
 				}
 			}
 		}
@@ -99,21 +107,62 @@ func main() {
 		panic(err)
 	}
 
+	// Ensure we can properly exit
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc,
+		os.Interrupt,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
+	go func() {
+		<-sigc
+		os.Exit(1)
+	}()
+
+	// Initialize progress bars
+	bars, _ := multibar.New()
+	progress := make([]func(int), len(matrix_flags[0]))
+	for i := len(matrix_flags[0]) - 1; i >= 0; i-- {
+		progress[i] = bars.MakeBar(matrix_flags[0][i].total, matrix_flags[0][i].key)
+	}
+	bars.Printf("\n") // print line to be overwritten by commands
+	go bars.Listen()
+
 	for _, mflags := range matrix_flags {
-		cmd_flags := make([]string, len(flags))
+		// Combine all flags for this command
+		cmd_flags := make([]string, 0)
 		for _, flag := range append(flags, mflags...) {
 			cmd_flags = append(cmd_flags, flag_string(flag))
 		}
 		cmd_flags = append(cmd_flags, params...)
 
 		cmd := exec.Command(run_script, cmd_flags...)
-		fmt.Printf("%s\n", cmd.Args)
 
-		// TOOD: Execute the command and store the output
+		time.Sleep(250 * time.Millisecond)
+		for i := len(mflags) - 1; i >= 0; i-- {
+			progress[i](mflags[i].current)
+		}
+		fmt.Printf("\033[2K\r%s", cmd.Args)
+		cmd.Output()
+
+		// TODO: Execute the command and store the output
 		// out, err := cmd.Output()
 		// if err != nil {
 		// 	panic(err)
 		// }
 		// fmt.Printf("%s", out)
 	}
+
+	// Ensure the terminal is correctly reset
+	// XXX: for some reason, after resetting the terminal,
+	//      we fail to return from main, so we just die after a brief wait
+	go func() {
+		<-time.After(100 * time.Millisecond)
+		os.Exit(0)
+	}()
+
+	c, _ := curse.New()
+	c.ModeRaw()
+	c.ModeRestore()
 }
