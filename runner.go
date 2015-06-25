@@ -32,7 +32,9 @@ func combinations_acc(prefix []Argument, args [][]Argument, matrix [][]Argument)
 		new_args := append([][]Argument{}, args...)
 		for _, margs := range matrix {
 			for _, arg := range margs {
-				new_args = combinations_acc(append([]Argument{arg}, prefix...), append(make([][]Argument, 0), new_args...), append(make([][]Argument, 0), matrix[1:]...))
+				new_prefixes := append([]Argument{arg}, prefix...)
+				new_matrix := append(make([][]Argument, 0), matrix[1:]...)
+				new_args = combinations_acc(new_prefixes, append(make([][]Argument, 0), new_args...), new_matrix)
 			}
 			break
 		}
