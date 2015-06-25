@@ -1,0 +1,12 @@
+project: NoSE
+
+vars:
+  - iterations: [1, 5, 10, 20, 50, 100]
+  - columns: [1, 2, 3]
+  - host: "10.0.1.11"
+  - random: true
+  - batch: true
+  - column_fetch
+
+scripts:
+  run: "/home/mmior/.rvm/gems/jruby-head@global/bin/bundle exec bin/cassbench bench"
